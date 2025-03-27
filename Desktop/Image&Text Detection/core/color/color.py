@@ -4,6 +4,8 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from typing import Dict, Set, Tuple, List
 from pikepdf import Pdf
+import colors_util
+
 
 class ColorSpace(ABC):
     """Abstract base class for color spaces"""
@@ -29,13 +31,17 @@ class RGBColorSpace(ColorSpace):
     
     def as_rgb(self, value: Tuple[float, ...]) -> Tuple[float, float, float]:
         return value
-
+    
+"""
+CMYK: cyan, magenta, yellow, and black,
+"""
 class CMYKColorSpace(ColorSpace):
     def __init__(self):
         super().__init__('cmyk')
     
     def as_rgb(self, value: Tuple[float, ...]) -> Tuple[float, float, float]:
         c, m, y, k = value
+        #CMYK TO RGB Conversion
         r = 1.0 - min(1.0, c * (1.0 - k) + k)
         g = 1.0 - min(1.0, m * (1.0 - k) + k)
         b = 1.0 - min(1.0, y * (1.0 - k) + k)
@@ -46,7 +52,10 @@ class GrayColorSpace(ColorSpace):
         super().__init__('gray')
     
     def as_rgb(self, value: Tuple[float, ...]) -> Tuple[float, float, float]:
-        return (value[0],) * 3
+        #Gray color RGB values are the same, hence why tuple multiplcation
+        #Tuple multiplication apply for all 3 elements
+
+        return  (value[0],) * 3
 
 class Color:
     """Represents a color with usage statistics"""
@@ -68,6 +77,7 @@ class Color:
         if self._hex is None:
             r, g, b = (int(channel * 255) for channel in self.rgb)
             self._hex = f"#{r:02X}{g:02X}{b:02X}"
+
         return self._hex
     
     def __eq__(self, other):
@@ -85,6 +95,10 @@ class Color:
 
 class ColorExtractor:
     """Extracts colors from PDF with usage statistics"""
+    #rb = raw bytes
+    #rg = rgb
+    #cmyk = k
+    #gray = g
     COLOR_SPACE_MAP = {
         'rgb': (re.compile(rb'([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+rg[^a-zA-Z]'), RGBColorSpace()),
         'cmyk': (re.compile(rb'([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+k[^a-zA-Z]'), CMYKColorSpace()),
@@ -135,7 +149,8 @@ class ColorExtractor:
                 try:
                     components = tuple(float(x.decode('ascii')) for x in match.groups())
                     color = Color(converter, components)
-                    
+                    if color.space.name == 'gray':
+                        color.value = color.value * 3
                     if color in self.colors:
                         self.colors[color].count += 1
                     else:
@@ -147,6 +162,7 @@ class ColorExtractor:
     
     def get_usage_stats(self) -> List[Color]:
         """Get colors sorted by usage frequency"""
+
         return sorted(self.colors.values(), 
                      key=lambda c: c.count, 
                      reverse=True)
@@ -154,10 +170,10 @@ class ColorExtractor:
 # Usage Example
 if __name__ == "__main__":
     extractor = ColorExtractor()
-    colors = extractor.extract("./color/he-academic-calendar-2024-09.pdf")
+    colors = extractor.extract("he-academic-calendar-2024-09.pdf")
     
     print(f"Found {len(colors)} unique colors (from {extractor.total_count} total uses)")
     print("Top 10 colors:")
     for color in extractor.get_usage_stats()[:10]:
-        print(f"{color.hex}: {color.space.name} {color.value} - {color.count} uses "
+        print(f"{color.hex}: {colors_util.get_color_name(colors_util.denormalize(color.value))} {colors_util.denormalize(color.value)} - {color.count} uses "
               f"({color.count/extractor.total_count:.1%})")
